@@ -5,14 +5,12 @@ given title or arxiv id, search the paper using arxiv api,
 
 import os, re, logging
 import arxiv
-import gradio as gr
 import requests
 import rich.pretty
 import json
-
+rich.pretty.install()
 logging.basicConfig(level=logging.INFO)
 
-rich.pretty.install()
 
 
 def auto_fetch_workflow(text):
@@ -28,7 +26,7 @@ def auto_fetch_workflow(text):
             download_log = f"file {filename} already exists"
         logging.info(download_log)
         notion_log = push_to_notion(result)
-        return "___".join([download_log, notion_log])
+        return "====".join([download_log, notion_log])
     else:
         return f"not found {text}"
 
@@ -164,9 +162,3 @@ def push_to_notion(result):
     return notion_log
 
 
-with gr.Blocks() as demo:
-    string = gr.Text()
-    info_label = gr.Label()
-    string.submit(fn=auto_fetch_workflow, inputs=string, outputs=[info_label])
-
-demo.queue().launch()
