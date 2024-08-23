@@ -25,12 +25,20 @@ build up a ui-based workflow，drop title or arxiv id，program will automatical
 
 ## how to use
 
+### prepare notion database and notion token
+left to be explained
+
 ### from source code
 ```
+pip install -r requirements.txt
 export NOTION_TOKEN=<your_notion_token>
 export NOTION_DATABASE_ID=<your_notion_database_id>
+export DOWNLOAD_DIR=<your_download_directory>
 python main.py
 ```
+
+### using docker
+TODO
 
 
 ## TODOs

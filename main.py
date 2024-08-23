@@ -19,14 +19,16 @@ def auto_fetch_workflow(text):
     result = search(text)
     if result:
         dirpath = os.environ.get("DOWNLOAD_DIR", "./papers")
+        os.makedirs(dirpath, exist_ok=True)
         filename = result.entry_id.split("/")[-1] + ".pdf"
         if not os.path.exists(os.path.join(dirpath, filename)):
             result.download_pdf(dirpath=dirpath, filename=filename)
-            logging.info(f"downloaded {filename}")
+            download_log = f"downloaded {filename}"
         else:
-            logging.info(f"file {filename} already exists")
-        push_to_notion(result)
-        return f"found {result.title}, push to notion successfully"
+            download_log = f"file {filename} already exists"
+        logging.info(download_log)
+        notion_log = push_to_notion(result)
+        return "___".join([download_log, notion_log])
     else:
         return f"not found {text}"
 
@@ -82,6 +84,19 @@ def push_to_notion(result):
 
     # 手动构建mapping, 即arxiv search res的相应信息对应我们需要上传数据库的哪些字段, 此时需要查询数据库的shema, 通过以下query即可
     # properties = requests.get(shema_url, headers=headers).json()["properties"]
+
+    # query if database already have items
+    query = {
+        "filter": {
+            "property": "URL",
+            "url": {"equals": result.entry_id},
+        }
+    }
+    response = requests.post(query_url, headers=headers, data=json.dumps(query)).json()
+    if len(response["results"]) > 0:
+        notion_log = "already exists in notion"
+        logging.info(notion_log)
+        return notion_log
 
     item_data = {
         "Date": {"type": "date", "date": {"start": str(result.updated.date())}},
@@ -139,15 +154,19 @@ def push_to_notion(result):
             }
         ),
     )
-    
+
     if response.status_code == 200:
-        logging.info(f"pushed to notion successfully")
+        notion_log = "pushed to notion successfully"
+        logging.info(notion_log)
     else:
-        logging.error(f"pushed to notion failed, {response.text}")
+        notion_log = f"pushed to notion failed, {response.text}"
+        logging.error(notion_log)
+    return notion_log
 
 
 with gr.Blocks() as demo:
     string = gr.Text()
-    string.submit(fn=auto_fetch_workflow, inputs=string, outputs=[])
+    info_label = gr.Label()
+    string.submit(fn=auto_fetch_workflow, inputs=string, outputs=[info_label])
 
 demo.queue().launch()
