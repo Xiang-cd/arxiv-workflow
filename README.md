@@ -6,6 +6,7 @@ This is a UI based workflow for manage arxiv papers with notion.
 
 - arxiv becoms a popular platform for sharing scientific papers, as a AI researcher, I get papers almost from arxiv
 - there is no efficient way to manage papers for files, citations, notes, and other information. `Endnote` manage citations mainly, `readpaper` dones a good job for notes, files and inplace translations, but lacks of self-defined field and efficient search.
+- some paper release with arxiv, but soon will be accepted by a conference or journal, how to update the bibtex and other information if you want to cite it in your paper?
 - my solution is to build a visualized database for papers via notion, define my field and tags for papers, and use `readpaper` to read them.
 
 The problem is:
@@ -30,4 +31,12 @@ export NOTION_TOKEN=<your_notion_token>
 export NOTION_DATABASE_ID=<your_notion_database_id>
 python main.py
 ```
+
+
+## TODOs
+
+- [ ] release my notion database template
+- [ ] bibtex auto refresh
+- [ ] export bibtex file for all your papers, with alias you've added
+- [ ] rest API documentation and CLI tools
 
