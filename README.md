@@ -1,6 +1,8 @@
 # arxiv auto workflow
 
-This is a UI based workflow for manage arxiv papers with notion.
+This is a automatic workflow for manage arxiv papers with notion.
+
+if you like this project, please give me a star✨!
 
 ## background & motivation
 
@@ -42,10 +44,19 @@ check `fetch.log` to see if refresh is successful.
 ## how to use
 
 ### prepare notion database and notion token
-left to be explained
+1. refer to my released [notion template](https://thorn-nymphea-be8.notion.site/5949a9924cc546799804a42ca4917d81), and add to your workspace.
+2. get the database id accroding to [notion doc](https://developers.notion.com/reference/retrieve-a-database)
+3. get the notion access token according to [notion doc](https://developers.notion.com/docs/getting-started#step-1-create-an-integration)
+4. test the notion api with `curl` command:
+   
+```bash
+curl -X GET https://api.notion.com/v1/databases/{database_id} \
+  -H "Authorization: Bearer {token}" \
+  -H "Notion-Version: 2021-08-16"
+```
 
 ### from source code
-```
+```bash
 pip install -r requirements.txt
 export NOTION_TOKEN=<your_notion_token>
 export NOTION_DATABASE_ID=<your_notion_database_id>
@@ -54,7 +65,7 @@ fastapi run server.py
 ```
 
 ### using docker
-```
+```bash
 docker build -t arxiv-workflow .
 
 export NOTION_TOKEN=<your_notion_token>
@@ -71,7 +82,7 @@ docker run -it --rm -e NOTION_TOKEN=$NOTION_TOKEN \
 
 ## TODOs
 
-- [ ] release my notion database template
+- [x] release my notion database template
 - [x] bibtex auto refresh
 - [x] export bibtex file for all your papers,
 - [ ] support export bibtex file for specific paper with alias you've added
