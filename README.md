@@ -34,12 +34,18 @@ when find a paper in abs/pdf url, just modify url using predefined api, then you
 files will be downloaded, metainfos will be uploaded to notion!
 
 ### 2. auto bibtex refresh
-refresh bibtex by [semanticscholar api](https://www.semanticscholar.org/product/api), and update the bibtex field in notion.
+Access `127.0.0.1:8000/bibtex?refresh=true` to refresh bibtex by [semanticscholar api](https://www.semanticscholar.org/product/api), and update the bibtex field in notion.
 As there are rate limit for semanticscholar api, we choose to start a new thread in background to refresh bibtex with a long sleep interval.
+Access `127.0.0.1:8000/bibtex?refresh=true&all=true` to refresh all bibtex in the database, no matter the item has an bib entry or not.
 | start refresh | check refresh |
 | --- | --- |
 | ![image](assets/refresh.png)  | ![image](assets/refresh_running.png) |
 check `fetch.log` to see if refresh is successful.
+
+### 3. export bibtex file for all your papers
+export bibtex file for all your papers by accessing `127.0.0.1:8000/bibtex`.
+![bib](assets/allbib.png)
+
 
 ## how to use
 
