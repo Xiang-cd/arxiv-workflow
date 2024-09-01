@@ -129,7 +129,7 @@ def refresh_bib_thread(all=False):
         if not all and res['properties']["bib"]["rich_text"]:
             continue
         title = res['properties']["Name"]["title"][0]["plain_text"]
-        semantic_search = semantic_scholar_search(title, sleep=60)
+        semantic_search = semantic_scholar_search(title, sleep=100)
         if semantic_search:
             bib_str = semantic_search['citationStyles']['bibtex']
             item_data = {"bib": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": bib_str}}]},}
