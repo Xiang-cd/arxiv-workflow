@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from main import auto_fetch_workflow, make_bibtex, refresh_bib
+import logging
+logging.basicConfig(level=logging.INFO, filename="fetch.log", filemode="a", format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s")
 
 
 app = FastAPI()

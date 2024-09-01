@@ -129,7 +129,7 @@ def refresh_bib_thread(all=False):
         if not all and res['properties']["bib"]["rich_text"]:
             continue
         title = res['properties']["Name"]["title"][0]["plain_text"]
-        semantic_search = semantic_scholar_search(title, sleep=30)
+        semantic_search = semantic_scholar_search(title, sleep=60)
         if semantic_search:
             bib_str = semantic_search['citationStyles']['bibtex']
             item_data = {"bib": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": bib_str}}]},}
@@ -208,7 +208,7 @@ def semantic_scholar_get_paper(paperId, sleep=10, max_retry=3):
             logging.warning(f"SS error: {detail_response['message']} for {paperId}")
             if "Too Many Requests" in detail_response['message']:
                 time.sleep(sleep)
-                return semantic_scholar_search(paperId, sleep, max_retry-1) if max_retry > 0 else None
+                return semantic_scholar_get_paper(paperId, sleep, max_retry-1) if max_retry > 0 else None
         else:
             logging.error(f"SS error: {detail_response} for {paperId}")
             return None
