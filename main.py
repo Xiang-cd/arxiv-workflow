@@ -27,7 +27,7 @@ def auto_fetch_workflow(text):
             download_log = f"file {filename} already exists"
         logging.info(download_log)
         notion_log = push_to_notion(result)
-        return "====".join([download_log, notion_log])
+        return "\n\n".join([download_log, notion_log])
     else:
         return f"not found {text}"
 
@@ -162,11 +162,15 @@ def make_bibtex():
         return: the bibtex string
     """
     bib_ls = []
-    for res in IterNotionDatabase():
-        bib_item = res['properties']["bib"]["rich_text"]
-        if bib_item:
-            bib_ls.append(rich_text2str(bib_item))
-    return "\n\n\n".join(bib_ls)
+    try:
+        for res in IterNotionDatabase():
+            bib_item = res['properties']["bib"]["rich_text"]
+            if bib_item:
+                bib_ls.append(rich_text2str(bib_item))
+        return "\n\n\n".join(bib_ls)
+    except Exception as e:
+        logging.error(f"error when fetching bib: {e}")
+        return "error when fetching bib, please refer to fetch.log"
 
 def rich_text2str(rich_text):
     plain_text_ls = []
