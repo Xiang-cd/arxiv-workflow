@@ -10,9 +10,15 @@ import rich.pretty
 import json
 import time
 import random
+
 rich.pretty.install()
 # formate with time, file:line number, message
-logging.basicConfig(level=logging.INFO, filename="fetch.log", filemode="a", format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    filename="fetch.log",
+    filemode="a",
+    format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
+)
 
 
 def auto_fetch_workflow(text):
@@ -63,7 +69,9 @@ def search(text):
 
 
 class IterNotionDatabase:
-    def __init__(self, NOTION_TOKEN=None, NOTION_DATABASE_ID=None):
+    def __init__(
+        self, NOTION_TOKEN=None, NOTION_DATABASE_ID=None, query_json: dict = {}
+    ):
         self.NOTION_TOKEN = (
             NOTION_TOKEN if NOTION_TOKEN else os.environ.get("NOTION_TOKEN", None)
         )
@@ -85,27 +93,37 @@ class IterNotionDatabase:
         self.current_batch = None
         self.current_batch_index = 0
         self.current_response = None
+        self.query_json = query_json
         self.query()
+
+    def retry_query(self, data=None, inverval=10, max_retry=5):
+        try:
+            response = requests.post(
+                self.query_url, headers=self.headers, data=json.dumps(data)
+            ).json()
+            return response
+        except Exception as e:
+            logging.error(f"retry query error: {e}")
+            time.sleep(inverval)
+            return (
+                self.retry_query(data, inverval, max_retry - 1)
+                if max_retry > 0
+                else None
+            )
 
     def query(self):
         if self.current_response is not None:
             if self.current_response.get("next_cursor", False):
-                response = requests.post(
-                    self.query_url,
-                    headers=self.headers,
-                    data=json.dumps(
-                        {"start_cursor": self.current_response["next_cursor"]}
-                    ),
-                ).json()
+                response = self.retry_query(
+                    data={"start_cursor": self.current_response["next_cursor"]},
+                )
                 self.current_response = response
                 self.current_batch = response["results"]
                 self.current_batch_index = 0
             else:
                 raise StopIteration
         else:
-            response = requests.post(
-                self.query_url, headers=self.headers, data=json.dumps({})
-            ).json()
+            response = self.retry_query(data=self.query_json)
             self.current_response = response
             self.current_batch = response["results"]
 
@@ -120,27 +138,52 @@ class IterNotionDatabase:
 
     def __iter__(self):
         return self
-    
 
 
 refresh_thread = None
 
 def refresh_bib_thread(all=False):
-    sleep_interval = int(os.environ.get("SS_SLEEP_INTERVAL", 200 + random.randint(-40, 40)))
-    for res in IterNotionDatabase():
-        if not all and res['properties']["bib"]["rich_text"]:
+    sleep_interval = int(
+        os.environ.get("SS_SLEEP_INTERVAL", 200 + random.randint(-40, 40))
+    )
+    iter_database = IterNotionDatabase(
+        query_json={
+            "filter": {
+                "property": "bib",
+                "rich_text": {"is_empty": True},
+            }
+        }
+    )
+    for res in iter_database:
+        if not all and res["properties"]["bib"]["rich_text"]:
             continue
-        title = res['properties']["Name"]["title"][0]["plain_text"]
-        semantic_search = semantic_scholar_search(title, sleep=sleep_interval, max_retry=5)
+        title = res["properties"]["Name"]["title"][0]["plain_text"]
+        semantic_search = semantic_scholar_search(
+            title, sleep=sleep_interval, max_retry=5
+        )
+        update_url = f"https://api.notion.com/v1/pages/{res['id']}"
         if semantic_search:
-            bib_str = semantic_search['citationStyles']['bibtex']
-            item_data = {"bib": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": bib_str}}]},}
-            update_url = f"https://api.notion.com/v1/pages/{res['id']}"
-            response = requests.patch(update_url, headers=IterNotionDatabase().headers, data=json.dumps({"properties": item_data}))
-            if response.status_code == 200:
-                logging.info(f"updated bib for {title} successfully")
-            else:
-                logging.error(f"update bib for {title} failed, {response.text}")
+            bib_str = semantic_search["citationStyles"]["bibtex"]
+        else:
+            bib_str = f"bib not found"
+        # upload bib to notion
+        item_data = {
+            "bib": {
+                "type": "rich_text",
+                "rich_text": [{"type": "text", "text": {"content": bib_str}}],
+            },
+        }
+        response = requests.patch(
+            update_url,
+            headers=iter_database.headers,
+            data=json.dumps({"properties": item_data}),
+        )
+        if response.status_code == 200:
+            logging.info(
+                f"{'='*4} bib {title} updated {'sucess' if semantic_search else bib_str}"
+            )
+        else:
+            logging.error(f"update bib for {title} failed, {response.text}")
 
 
 def refresh_bib(all=False):
@@ -151,6 +194,7 @@ def refresh_bib(all=False):
     """
     global refresh_thread
     import threading
+
     if refresh_thread and refresh_thread.is_alive():
         return "refresh thread already exists"
     else:
@@ -161,71 +205,85 @@ def refresh_bib(all=False):
 
 def make_bibtex():
     """makeing a bibtex string from notion database, return the bib string to webview
-        return: the bibtex string
+    return: the bibtex string
     """
     bib_ls = []
     try:
         for res in IterNotionDatabase():
-            bib_item = res['properties']["bib"]["rich_text"]
-            if bib_item:
+            bib_item = res["properties"]["bib"]["rich_text"]
+            if bib_item and "bib not found" not in rich_text2str(bib_item):
                 bib_ls.append(rich_text2str(bib_item))
         return "\n\n\n".join(bib_ls)
     except Exception as e:
         logging.error(f"error when fetching bib: {e}")
         return "error when fetching bib, please refer to fetch.log"
 
+
 def rich_text2str(rich_text):
     plain_text_ls = []
     for item in rich_text:
         if item["type"] == "text":
-            plain_text_ls.append(item['plain_text'])
+            plain_text_ls.append(item["plain_text"])
     return "".join(plain_text_ls)
 
 
 def semantic_scholar_title_search(text, sleep=10, max_retry=3):
-    query_url = "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}"
+    query_url = (
+        "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}"
+    )
     SS_KEY = os.environ.get("SS_KEY", None)
     headers = {"x-api-key": SS_KEY} if SS_KEY else {}
     try:
         response = requests.get(query_url.format(query=text), headers=headers).json()
-        if response.get('data', False) and response['data']:
-            logging.info(f"SS search title found for {text}, paper id is {response['data'][0]['paperId']}")
-            return response['data'][0]["paperId"]
-        elif response.get('error', False):
+        if response.get("data", False) and response["data"]:
+            logging.info(
+                f"SS search title found for {text}, paper id is {response['data'][0]['paperId']}"
+            )
+            return response["data"][0]["paperId"]
+        elif response.get("error", False):
             logging.error(f"SS search title error: {response['error']} for {text}")
             return None
         elif response.get("message", False):
             logging.warning(f"SS search title error: {response['message']} for {text}")
-            if "Too Many Requests" in response['message']:
+            if "Too Many Requests" in response["message"]:
                 time.sleep(sleep)
-                return semantic_scholar_title_search(text, sleep, max_retry-1) if max_retry > 0 else None
+                return (
+                    semantic_scholar_title_search(text, sleep, max_retry - 1)
+                    if max_retry > 0
+                    else None
+                )
         else:
             return None
     except Exception as e:
         logging.error(f"SS search title error: {e} for {text}")
         return None
 
+
 def semantic_scholar_get_paper(paperId, sleep=10, max_retry=3):
     SS_KEY = os.environ.get("SS_KEY", None)
     headers = {"x-api-key": SS_KEY} if SS_KEY else {}
     try:
-        detail_query = f'https://api.semanticscholar.org/graph/v1/paper/{paperId}?fields=citationStyles'
+        detail_query = f"https://api.semanticscholar.org/graph/v1/paper/{paperId}?fields=citationStyles"
         detail_response = requests.get(detail_query, headers=headers).json()
-        if detail_response.get('citationStyles', False):
+        if detail_response.get("citationStyles", False):
             logging.info(f"SS citation found for {paperId}")
             return detail_response
-        elif detail_response.get('message', False):
+        elif detail_response.get("message", False):
             logging.warning(f"SS error: {detail_response['message']} for {paperId}")
-            if "Too Many Requests" in detail_response['message']:
+            if "Too Many Requests" in detail_response["message"]:
                 time.sleep(sleep)
-                return semantic_scholar_get_paper(paperId, sleep, max_retry-1) if max_retry > 0 else None
+                return (
+                    semantic_scholar_get_paper(paperId, sleep, max_retry - 1)
+                    if max_retry > 0
+                    else None
+                )
         else:
             logging.error(f"SS error: {detail_response} for {paperId}")
             return None
     except Exception as e:
         logging.error(f"semantic_scholar error: {e} for {paperId}")
         return None
-        
+
 
 def semantic_scholar_search(text, sleep=10, max_retry=3):
     """api doc
@@ -235,7 +293,6 @@ def semantic_scholar_search(text, sleep=10, max_retry=3):
     logging.info(f"semantic_scholar searching for {text}")
     paperId = semantic_scholar_title_search(text, sleep, max_retry)
     return semantic_scholar_get_paper(paperId, sleep, max_retry) if paperId else None
-
 
 
 def push_to_notion(result):
