@@ -67,6 +67,8 @@ pip install -r requirements.txt
 export NOTION_TOKEN=<your_notion_token>
 export NOTION_DATABASE_ID=<your_notion_database_id>
 export DOWNLOAD_DIR=<your_download_directory>
+export SS_KEY=<your_semanticscholar_api_key> # using an semanticscholar api key to get higher rate limit
+export SS_SLEEP_INTERVAL=<your_semanticscholar_api_sleep_interval> # default 200s with random range -40 t0 40s
 fastapi run server.py
 ```
 
@@ -77,6 +79,8 @@ docker build -t arxiv-workflow .
 export NOTION_TOKEN=<your_notion_token>
 export NOTION_DATABASE_ID=<your_notion_database_id>
 export DOWNLOAD_DIR=<your_download_directory>
+export SS_KEY=<your_semanticscholar_api_key>
+export SS_SLEEP_INTERVAL=<your_semanticscholar_api_sleep_interval> # default 200s with random range -40 t0 40s
 
 docker run -it --rm -e NOTION_TOKEN=$NOTION_TOKEN \
     -e NOTION_DATABASE_ID=$NOTION_DATABASE_ID \

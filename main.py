@@ -9,6 +9,7 @@ import requests
 import rich.pretty
 import json
 import time
+import random
 rich.pretty.install()
 # formate with time, file:line number, message
 logging.basicConfig(level=logging.INFO, filename="fetch.log", filemode="a", format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s")
@@ -125,11 +126,12 @@ class IterNotionDatabase:
 refresh_thread = None
 
 def refresh_bib_thread(all=False):
+    sleep_interval = int(os.environ.get("SS_SLEEP_INTERVAL", 200 + random.randint(-40, 40)))
     for res in IterNotionDatabase():
         if not all and res['properties']["bib"]["rich_text"]:
             continue
         title = res['properties']["Name"]["title"][0]["plain_text"]
-        semantic_search = semantic_scholar_search(title, sleep=100)
+        semantic_search = semantic_scholar_search(title, sleep=sleep_interval, max_retry=5)
         if semantic_search:
             bib_str = semantic_search['citationStyles']['bibtex']
             item_data = {"bib": {"type": "rich_text", "rich_text": [{"type": "text", "text": {"content": bib_str}}]},}
@@ -182,8 +184,10 @@ def rich_text2str(rich_text):
 
 def semantic_scholar_title_search(text, sleep=10, max_retry=3):
     query_url = "https://api.semanticscholar.org/graph/v1/paper/search/match?query={query}"
+    SS_KEY = os.environ.get("SS_KEY", None)
+    headers = {"x-api-key": SS_KEY} if SS_KEY else {}
     try:
-        response = requests.get(query_url.format(query=text)).json()
+        response = requests.get(query_url.format(query=text), headers=headers).json()
         if response.get('data', False) and response['data']:
             logging.info(f"SS search title found for {text}, paper id is {response['data'][0]['paperId']}")
             return response['data'][0]["paperId"]
@@ -202,9 +206,11 @@ def semantic_scholar_title_search(text, sleep=10, max_retry=3):
         return None
 
 def semantic_scholar_get_paper(paperId, sleep=10, max_retry=3):
+    SS_KEY = os.environ.get("SS_KEY", None)
+    headers = {"x-api-key": SS_KEY} if SS_KEY else {}
     try:
         detail_query = f'https://api.semanticscholar.org/graph/v1/paper/{paperId}?fields=citationStyles'
-        detail_response = requests.get(detail_query).json()
+        detail_response = requests.get(detail_query, headers=headers).json()
         if detail_response.get('citationStyles', False):
             logging.info(f"SS citation found for {paperId}")
             return detail_response
