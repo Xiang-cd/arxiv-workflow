@@ -5,6 +5,9 @@ given title or arxiv id, search the paper using arxiv api,
 
 import os, re, logging
 import arxiv
+from arxiv import Client, HTTPError, UnexpectedEmptyPageError
+from datetime import datetime, timedelta
+import feedparser
 import requests
 import rich.pretty
 import json
@@ -20,6 +23,51 @@ logging.basicConfig(
     format="%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s",
 )
 
+http_headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"}
+
+class MyCliet(Client):
+    def __init__(self, *args, headers=None,**kwargs):
+        super().__init__(*args, **kwargs)
+        self.headers = headers or {}
+    
+    def __try_parse_feed(
+        self,
+        url: str,
+        first_page: bool,
+        try_index: int,
+    ) -> feedparser.FeedParserDict:
+        """
+        Recursive helper for _parse_feed. Enforces `self.delay_seconds`: if that
+        number of seconds has not passed since `_parse_feed` was last called,
+        sleeps until delay_seconds seconds have passed.
+        """
+        # If this call would violate the rate limit, sleep until it doesn't.
+        if self._last_request_dt is not None:
+            required = timedelta(seconds=self.delay_seconds)
+            since_last_request = datetime.now() - self._last_request_dt
+            if since_last_request < required:
+                to_sleep = (required - since_last_request).total_seconds()
+                logging.info("Sleeping: %f seconds", to_sleep)
+                time.sleep(to_sleep)
+
+        logging.info("Requesting page (first: %r, try: %d): %s", first_page, try_index, url)
+
+        resp = self._session.get(url, headers=self.headers)
+        self._last_request_dt = datetime.now()
+        if resp.status_code != requests.codes.OK:
+            raise HTTPError(url, try_index, resp.status_code)
+
+        feed = feedparser.parse(resp.content)
+        if len(feed.entries) == 0 and not first_page:
+            raise UnexpectedEmptyPageError(url, try_index, feed)
+
+        if feed.bozo:
+            logging.warning(
+                "Bozo feed; consider handling: %s",
+                feed.bozo_exception if "bozo_exception" in feed else None,
+            )
+
+        return feed
 
 def auto_fetch_workflow(text):
     result = search(text)
@@ -28,7 +76,9 @@ def auto_fetch_workflow(text):
         os.makedirs(dirpath, exist_ok=True)
         filename = result.entry_id.split("/")[-1] + ".pdf"
         if not os.path.exists(os.path.join(dirpath, filename)):
-            result.download_pdf(dirpath=dirpath, filename=filename)
+            download_response = requests.get(result.pdf_url, headers=http_headers)
+            with open(os.path.join(dirpath, filename), "wb") as f:
+                f.write(download_response.content)
             download_log = f"downloaded {filename}"
         else:
             download_log = f"file {filename} already exists"
@@ -48,7 +98,7 @@ def search(text):
     Returns:
         reults type or None
     """
-    client = arxiv.Client()
+    client = MyCliet(headers=http_headers)
     logging.info(f"searching for {text}")
     if re.match(r".+?(abs|pdf|html)\/\d+.\w+", text):
         # case of url, abs/arxiv_id or pdf/arxiv_id
@@ -63,7 +113,8 @@ def search(text):
 
     try:
         result = next(results)
-    except:
+    except Exception as e:
+        logging.error(f"search error: {e}")
         return None
     return result
 
