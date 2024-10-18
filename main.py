@@ -364,6 +364,7 @@ def push_to_notion(result):
         "Authorization": f"Bearer {NOTION_TOKEN}",
         "Content-Type": "application/json",
         "Notion-Version": "2022-06-28",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
     }
 
     # 手动构建mapping, 即arxiv search res的相应信息对应我们需要上传数据库的哪些字段, 此时需要查询数据库的shema, 通过以下query即可
