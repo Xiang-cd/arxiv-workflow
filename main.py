@@ -77,13 +77,24 @@ def auto_fetch_workflow(text):
         filename = result.entry_id.split("/")[-1] + ".pdf"
         if not os.path.exists(os.path.join(dirpath, filename)):
             download_response = requests.get(result.pdf_url, headers=http_headers)
-            with open(os.path.join(dirpath, filename), "wb") as f:
-                f.write(download_response.content)
-            download_log = f"downloaded {filename}"
+            if download_response.status_code != 200:
+                download_log = f"download {filename} failed, {download_response.status_code=}"
+            else:
+                with open(os.path.join(dirpath, filename), "wb") as f:
+                    f.write(download_response.content)
+                download_log = f"downloaded {filename}"
         else:
             download_log = f"file {filename} already exists"
         logging.info(download_log)
-        notion_log = push_to_notion(result)
+        for i in range(10):
+            try:
+                notion_log = push_to_notion(result)
+            except Exception as e:
+                notion_log = f"push to notion error: {e}"
+                logging.error(f"push to notion error: {e}")
+                time.sleep(0.02)
+            else:
+                break
         return "\n\n".join([download_log, notion_log])
     else:
         return f"not found {text}"
