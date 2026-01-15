@@ -75,8 +75,9 @@ def auto_fetch_workflow(text):
         dirpath = os.environ.get("DOWNLOAD_DIR", "./papers")
         os.makedirs(dirpath, exist_ok=True)
         filename = result.entry_id.split("/")[-1] + ".pdf"
+        pdf_url = result.entry_id.replace("abs", "pdf")
         if not os.path.exists(os.path.join(dirpath, filename)):
-            download_response = requests.get(result.pdf_url, headers=http_headers)
+            download_response = requests.get(pdf_url, headers=http_headers)
             if download_response.status_code != 200:
                 download_log = f"download {filename} failed, {download_response.status_code=}"
             else:
@@ -205,9 +206,6 @@ class IterNotionDatabase:
 refresh_thread = None
 
 def refresh_bib_thread(all=False):
-    sleep_interval = int(
-        os.environ.get("SS_SLEEP_INTERVAL", 200 + random.randint(-40, 40))
-    )
     iter_database = IterNotionDatabase(
         query_json={
             "filter": {
@@ -220,15 +218,39 @@ def refresh_bib_thread(all=False):
         if not all and res["properties"]["bib"]["rich_text"]:
             continue
         title = res["properties"]["Name"]["title"][0]["plain_text"]
-        semantic_search = semantic_scholar_search(
-            title, sleep=sleep_interval, max_retry=5
-        )
-        update_url = f"https://api.notion.com/v1/pages/{res['id']}"
-        if semantic_search:
-            bib_str = semantic_search["citationStyles"]["bibtex"]
-        else:
-            bib_str = f"bib not found"
+        
+        # 从 URL 字段获取 arxiv_id
+        url_property = res["properties"].get("URL", {})
+        if not url_property.get("url"):
+            logging.warning(f"No URL found for {title}, skipping")
+            continue
+        
+        arxiv_url = url_property["url"]
+        arxiv_id_match = re.search(r"\d+\.\d+", arxiv_url)
+        if not arxiv_id_match:
+            logging.warning(f"Could not extract arxiv_id from {arxiv_url}, skipping")
+            continue
+        
+        arxiv_id = arxiv_id_match.group()
+        bibtex_url = f"https://arxiv.org/bibtex/{arxiv_id}"
+        try:
+            bib_response = requests.get(bibtex_url, headers=http_headers)
+            if bib_response.status_code != 200:
+                logging.warning(f"Failed to fetch bibtex for {arxiv_id}, status code: {bib_response.status_code}, skipping")
+                continue
+            
+            bib_str = bib_response.text.strip()
+            if not bib_str:
+                logging.warning(f"Empty bibtex for {arxiv_id}, skipping")
+                continue
+            
+            logging.info(f"Successfully fetched bibtex for {arxiv_id} (title: {title})")
+        except Exception as e:
+            logging.error(f"Error fetching bibtex for {arxiv_id}: {e}, skipping")
+            continue
+        
         # upload bib to notion
+        update_url = f"https://api.notion.com/v1/pages/{res['id']}"
         item_data = {
             "bib": {
                 "type": "rich_text",
@@ -241,9 +263,7 @@ def refresh_bib_thread(all=False):
             data=json.dumps({"properties": item_data}),
         )
         if response.status_code == 200:
-            logging.info(
-                f"{'='*4} bib {title} updated {'sucess' if semantic_search else bib_str}"
-            )
+            logging.info(f"{'='*4} bib {title} updated success")
         else:
             logging.error(f"update bib for {title} failed, {response.text}")
 
@@ -394,6 +414,38 @@ def push_to_notion(result):
         logging.info(notion_log)
         return notion_log
 
+    # 从 entry_id 中提取 arxiv_id，例如从 https://arxiv.org/abs/2308.00951 提取 2308.00951
+    arxiv_id_match = re.search(r"\d+\.\d+", result.entry_id)
+    bib_str = ""
+    bib_with_abs_str = ""
+    if arxiv_id_match:
+        arxiv_id = arxiv_id_match.group()
+        bibtex_url = f"https://arxiv.org/bibtex/{arxiv_id}"
+        try:
+            bib_response = requests.get(bibtex_url, headers=http_headers)
+            if bib_response.status_code == 200:
+                bib_str = bib_response.text.strip()
+                # 在 bibtex 中添加 abs 字段
+                # 转义摘要中的特殊字符，替换 { } 为 {{ }}
+                abs_content = result.summary.replace("{", "{{").replace("}", "}}")
+                # 在最后一个 } 之前插入 abs 字段
+                last_brace_pos = bib_str.rfind("}")
+                if last_brace_pos > 0:
+                    # 在最后一个 } 之前插入 abs 字段
+                    bib_with_abs_str = bib_str[:last_brace_pos].rstrip() + f"\n      abs={{{abs_content}}},\n}}"
+                else:
+                    bib_with_abs_str = bib_str + f",\n      abs={{{abs_content}}}"
+                logging.info(f"Successfully fetched bibtex for {arxiv_id}")
+            else:
+                logging.warning(f"Failed to fetch bibtex for {arxiv_id}, status code: {bib_response.status_code}")
+                bib_str = f"bib not found (status: {bib_response.status_code})"
+        except Exception as e:
+            logging.error(f"Error fetching bibtex for {arxiv_id}: {e}")
+            bib_str = f"bib not found (error: {str(e)})"
+    else:
+        logging.warning(f"Could not extract arxiv_id from {result.entry_id}")
+        bib_str = "bib not found (invalid arxiv_id)"
+
     item_data = {
         "Date": {"type": "date", "date": {"start": str(result.updated.date())}},
         "level": {
@@ -405,7 +457,14 @@ def push_to_notion(result):
             "rich_text": [{"type": "text", "text": {"content": result.summary}}],
         },
         "alias": {"type": "rich_text", "rich_text": []},
-        "bib": {"type": "rich_text", "rich_text": []},
+        "bib": {
+            "type": "rich_text",
+            "rich_text": [{"type": "text", "text": {"content": bib_str}}] if bib_str else [],
+        },
+        "bib_with_abs": {
+            "type": "rich_text",
+            "rich_text": [{"type": "text", "text": {"content": bib_with_abs_str}}] if bib_with_abs_str else [],
+        },
         "my summary": {
             "type": "rich_text",
             "rich_text": [],
